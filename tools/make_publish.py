@@ -1,0 +1,92 @@
+# -*- coding: utf-8 -*-
+"""
+准备可公开发布的仓库内容:
+1) 从工程目录复制工具脚本
+2) 对文档做敏感信息脱敏
+3) 绝不复制含凭据的目录 (device/ capture/ apk/)
+
+脱敏清单从同目录的 secrets.txt 读取 (每行 `真实值=占位符`),
+该文件**不入库**, 以免把敏感值本身写进代码。
+
+运行后产出 <工程根>/publish/
+"""
+import os
+import re
+import shutil
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.abspath(os.path.join(HERE, ".."))   # probe/ 的上一级 = 工程根
+PUB = os.path.join(ROOT, "publish")
+TOOLS_SRC = os.path.join(ROOT, "probe")
+
+# 从外部清单加载脱敏规则
+SECRETS = []
+_secrets_file = os.path.join(HERE, "secrets.txt")
+if os.path.exists(_secrets_file):
+    with open(_secrets_file, encoding="utf-8") as f:
+        for line in f:
+            line = line.rstrip("\n")
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            real, ph = line.split("=", 1)
+            SECRETS.append((real, ph))
+
+TOOLS = [
+    "remotezip.py", "dns_recon.py", "probe_hosts.py", "meta_strings.py",
+    "kwstat.py", "strings.py", "lxdata_probe.py", "analyze_entries.py",
+    "pcap_analyze.py", "pcap_streams.py", "extract_resp.py", "dump_bodies.py",
+    "flow_analyze.py", "transform_bf.py", "replay.py", "probe_api.py",
+    "mem_find.py", "elf_syms.py", "scan_mem.sh", "scan_mem2.sh",
+]
+
+DOCS = [
+    "舰R现行协议还原报告.md",
+    "舰R脱机脚本复活_调研报告.md",
+]
+
+
+def scrub(text):
+    hits = []
+    for real, ph in SECRETS:
+        if real and real in text:
+            hits.append("%s x%d" % (ph, text.count(real)))
+            text = text.replace(real, ph)
+    # 兜底: 32 位十六进制 token 形态 / 19 位纯数字 ID
+    text = re.sub(r"\b[0-9a-f]{32}\b", "<REDACTED_HEX32>", text)
+    text = re.sub(r"\b1[0-9]{18}\b", "<REDACTED_ID19>", text)
+    return text, hits
+
+
+def main():
+    print("脱敏规则条数: %d (%s)" % (len(SECRETS), "已加载 secrets.txt" if SECRETS else "缺失!"))
+    if os.path.exists(PUB):
+        shutil.rmtree(PUB)
+    os.makedirs(os.path.join(PUB, "docs"))
+    os.makedirs(os.path.join(PUB, "tools"))
+
+    for t in TOOLS:
+        src = os.path.join(TOOLS_SRC, t)
+        if os.path.exists(src):
+            shutil.copy2(src, os.path.join(PUB, "tools", t))
+            print("tool   %s" % t)
+        else:
+            print("MISS   %s" % t)
+
+    for d in DOCS:
+        src = os.path.join(ROOT, d)
+        if not os.path.exists(src):
+            print("MISS doc %s" % d)
+            continue
+        with open(src, encoding="utf-8") as f:
+            txt = f.read()
+        txt2, hits = scrub(txt)
+        with open(os.path.join(PUB, "docs", d), "w", encoding="utf-8") as f:
+            f.write(txt2)
+        print("doc    %s   脱敏: %s" % (d, hits or "无"))
+
+    print("\npublish 目录: %s" % PUB)
+    print("提示: 仍需手动拷入 README.md / .gitignore / tools/make_publish.py")
+
+
+if __name__ == "__main__":
+    main()

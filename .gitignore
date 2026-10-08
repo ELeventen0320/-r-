@@ -1,0 +1,35 @@
+# ---- 凭据与个人数据: 绝对不要提交 ----
+device/
+capture/
+apk/
+mem*.bin
+**/hm_preference.xml
+**/*.pcap
+**/*.pcapng
+**/*.http.bin
+*_C_S_*.bin
+*_S_C_*.bin
+.gitleaks.toml
+
+# ---- 大体积中间产物 ----
+*.zip
+*.7z
+*.7z.exe
+*.apk
+*.so
+*.dex
+global-metadata.dat
+PortableGit*
+notes/metadata_strings.txt
+notes/apk_entries.txt
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+probe/_cache/
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
