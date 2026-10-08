@@ -18,8 +18,10 @@
 | 旧协议（v3.8 / v4.5） | ❌ **已作废**：域名 NXDOMAIN、密钥从客户端移除、REST 接口全 404 |
 | 现行 HTTP 引导协议 | ✅ **完整还原并实测验证** |
 | 现行服务器列表 | ✅ 6 个国服 + 多云镜像，全部实测 |
-| 脱机连接游戏服 | ✅ **已重放成功**（本机直连拿到真实响应） |
-| 游戏主协议编解码 | ❌ **未完成**（二进制，最高位像标记位 / 轻量混淆，非强加密） |
+| 脱机连接游戏服 | ✅ **已跑通**（本机直连，服务端下发会话密钥） |
+| **游戏主协议加密** | ✅ **已破译 = 明文 XOR `0xAE`** |
+| **报文结构 / 内层字段** | ✅ **已还原**（6B 消息头 + u32 长度 + protobuf 风格 TLV） |
+| `lxdata` 容器（Lua 字节码） | ❌ 未解（网络侧不需要；要读全部业务逻辑才需要） |
 
 ---
 
@@ -124,26 +126,61 @@ adb shell "/data/local/tmp/scan_mem2.sh $(adb shell pidof <包名>) moefantasy x
 
 ---
 
-## 四、待完成：游戏主协议编解码
+## 四、游戏主协议：✅ 已破译
 
-响应数据**不是强加密**，判断依据：
+### 4.1 加密
 
-1. 存在高度规整的重复块（16~17 字节），例如响应中重复约 10 次：
-   `bf ae ae ae eb a3 a8 ae ae ae 2e a8 ae ae ae af ae`
-2. 大量字节成对只差最高位：`AE/2E`、`A8/28`、`AF/2F`、`BF/3F`、`A3/23`
-3. 固定明文（12 字节首包）在**两次不同连接中密文完全相同** → 无每连接 IV / 密钥流
-4. 重复周期检测未发现短周期 XOR 密钥
+**明文 XOR `0xAE`** —— 单字节、全局固定，`libtolua.so` 的 `lxnet` 层注册的加密函数即为此。
 
-**当前假设**：最高位作标记位的自定义位打包序列化（类 varint / BitStream），
-或 `lxnet` 的轻量流密码。需要拿到编解码器本体。
+破译路径：从导出符号发现 `lua_lxnet_messagepack_pushdata/getdata`
+→ 反汇编得到报文结构 → 对已知明文位置试单字节 XOR，一击命中。
 
-三条可行路线：
+### 4.2 报文结构
 
-| 路线 | 做法 | 成本 |
-|---|---|---|
-| **A（推荐）** | Frida hook `libtolua.so` 的 `lxnet::Socketer::SendData`（已确认是**导出符号**）与接收侧，dump 明文 | 低-中 |
-| B | 静态逆向 `libtolua.so` 的 `packet_*` / `lxnet::Socketer`（需 IDA/Ghidra） | 中-高 |
-| C | 从进程内存 dump 解密后的 Lua（`lxdata` 容器解开后的业务逻辑） | 中 |
+```
+[0..6)   6 字节消息头        (实测常为 06 00 00 00 01 00)
+[6..10)  uint32 LE 负载长度
+[10..)   负载
+```
+每条消息固定 **10 字节开销**。来源：`libtolua.so` 反汇编
+
+```asm
+; lua_lxnet_messagepack_pushdata @ 0x000f4c6c
+stur w21, [x3, #6]      ; 在 offset+6 写入 u32 长度
+add  x0, x0, #6         ; 负载从 offset+10 开始
+bl   memcpy
+```
+
+### 4.3 内层字段 = protobuf 风格 TLV
+
+`tag = (field<<3) | wiretype`，`wiretype=2` 为 length-delimited。实测样例：
+
+| tag | field | len | 值 |
+|---|---|---|---|
+| `62` | 12 | `0a` | `Android 35` |
+| `5a` | 11 | `20` | 设备指纹（32 hex） |
+| `22` | 4 | `20` | 会话 token |
+| `12` | 2 | `0e` | `hm_sdk_android` |
+
+### 4.4 端到端验证
+
+`tools/wsgr_client.py` 直连 `xr-server-2.moefantasy.com:10010`，
+发送抓取到的握手+进入游戏请求，服务端**下发了新会话密钥** `EVFZLn3GVXmV08Hh`；
+73 KB 初始数据解密后含好友/演习名单（`Richelieu`、`Miyuki`…）、
+字段名（`def`/`atk`/`torpedo`/`air_`）、客户端配置（`{"audit":false,…}`）。
+
+### 4.5 仍未解决：`lxdata` 容器
+
+`script.script` / `config.conf` / `xbask.core` **不用** XOR 0xAE
+（magic `lxdata` 为明文，载荷单字节 XOR 全空间试探无效）。
+
+网络侧已不需要它。若要**穷尽全部业务逻辑**（出征/战斗/后勤每条消息的字段含义），
+两条路：
+
+| 路线 | 做法 |
+|---|---|
+| A（推荐） | **录制–回放 + 黑盒试探**：直接连服务器发消息、看响应，逐条确定字段语义 |
+| B | 继续逆向 `lxdata`（`packet_open` @ `libtolua.so`），拿 Lua 字节码再反编译 |
 
 已确认可用的 hook 落点（`.dynsym` 导出，含偏移）：
 

@@ -37,6 +37,18 @@ TOOLS = [
     "pcap_analyze.py", "pcap_streams.py", "extract_resp.py", "dump_bodies.py",
     "flow_analyze.py", "transform_bf.py", "replay.py", "probe_api.py",
     "mem_find.py", "elf_syms.py", "scan_mem.sh", "scan_mem2.sh",
+    # --- 协议破译相关 ---
+    "wsgr_client.py",      # ★ 脱机客户端原型 (XOR 0xAE + 帧 + TLV)
+    "decode_proto.py",     # 批量解密并切帧
+    "decode_full.py",      # 解码 73KB 初始数据 + TLV 字段扫描
+    "msgpack_try.py",      # MessagePack 试探 (已排除)
+    "disasm.py",           # ARM64 反汇编 + 调用图 (capstone)
+    "dynsym_dump.py",      # .dynsym 完整转储
+    "ks_period.py",        # 密钥流周期探测
+    "lxdata_xor.py",       # lxdata 文件间 XOR 对比
+    "lxdata_decrypt.py",   # lxdata 单字节 XOR 全空间试探
+    "reg_analyze.py",      # 内存区域内容分析
+    "scan_offset.sh",      # 区域内按偏移定位关键词
 ]
 
 DOCS = [
