@@ -49,11 +49,23 @@ TOOLS = [
     "lxdata_decrypt.py",   # lxdata 单字节 XOR 全空间试探
     "reg_analyze.py",      # 内存区域内容分析
     "scan_offset.sh",      # 区域内按偏移定位关键词
+    "dump_msgs.py",         # 消息转储 (头+TLV)
+    "wsgr_proto.py",        # ★ 协议编解码库 (加解密+切帧+跳填充)
+    "wsgr_headless.py",     # ★ 脱机客户端完整链路 (列表+认证+连接)
+    "frame_verify.py",      # 帧格式验证
+    "frame_verify2.py",     # 帧格式验证 (带重同步)
+    "frame_solve.py",       # 帧格式穷举求解
+    "hd.py",                # 带偏移 hexdump
 ]
 
 DOCS = [
     "舰R现行协议还原报告.md",
     "舰R脱机脚本复活_调研报告.md",
+]
+
+# 额外脱敏后写入 publish 根目录: (工程根下的源文件, publish 内的目标名)
+EXTRA = [
+    ("README.publish.md", "README.md"),
 ]
 
 
@@ -112,8 +124,20 @@ def main():
             f.write(txt2)
         print("doc    %s   脱敏: %s" % (d, hits or "无"))
 
+    for src_name, dst_name in EXTRA:
+        src = os.path.join(ROOT, src_name)
+        if not os.path.exists(src):
+            print("MISS   %s" % src_name)
+            continue
+        with open(src, encoding="utf-8") as f:
+            txt = f.read()
+        txt2, hits = scrub(txt)
+        with open(os.path.join(PUB, dst_name), "w", encoding="utf-8") as f:
+            f.write(txt2)
+        print("extra  %s -> %s   脱敏: %s" % (src_name, dst_name, hits or "无"))
+
     print("\npublish 目录: %s" % PUB)
-    print("提示: 仍需手动拷入 README.md / .gitignore / tools/make_publish.py")
+    print("提示: 还需手动拷入 .gitignore 与 tools/make_publish.py")
 
 
 if __name__ == "__main__":

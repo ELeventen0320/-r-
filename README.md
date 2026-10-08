@@ -135,21 +135,33 @@ adb shell "/data/local/tmp/scan_mem2.sh $(adb shell pidof <包名>) moefantasy x
 破译路径：从导出符号发现 `lua_lxnet_messagepack_pushdata/getdata`
 → 反汇编得到报文结构 → 对已知明文位置试单字节 XOR，一击命中。
 
-### 4.2 报文结构
+### 4.2 报文结构 ✅ 已在 3 条真实流上 100% 验证
 
 ```
-[0..6)   6 字节消息头        (实测常为 06 00 00 00 01 00)
-[6..10)  uint32 LE 负载长度
-[10..)   负载
+加密 : 密文 = 明文 XOR 0xAE                       (单字节, 全局固定)
+帧   : <u32 LE 总长度 L, 含自身 4 字节> + (L-4) 字节内容
+填充 : 帧之间可夹 0xAE 填充 (明文 0xAE / 密文全 00), 解码时跳过
 ```
-每条消息固定 **10 字节开销**。来源：`libtolua.so` 反汇编
 
-```asm
-; lua_lxnet_messagepack_pushdata @ 0x000f4c6c
-stur w21, [x3, #6]      ; 在 offset+6 写入 u32 长度
-add  x0, x0, #6         ; 负载从 offset+10 开始
-bl   memcpy
-```
+| 流 | 大小 | 帧数 | 消费率 | 跳过填充 |
+|---|---|---|---|---|
+| 服务端→客户端 | 63,563 B | 42 | **100.0%** | 144 B |
+| 服务端→客户端 | 72,953 B | 28 | **100.0%** | 78 B |
+| 客户端→服务端 | 412 B | 25 | **100.0%** | 0 B |
+
+这条规则一次性解释了所有此前的「怪现象」：
+
+- 被误读成「12 字节握手」的 `06 00 00 00 01 00`，头 4 字节**就是长度 6**；
+- 重复出现的 17 字节块 `11 00 00 00 45 0d ...`，头 4 字节**就是长度 17**；
+- `04 00 00 00` 是**长度 4 的空帧**；
+- 服务端流开头的 8 字节 `0xAE` 与帧间填充都是**明文 0xAE 填充**。
+
+> **踩坑记录**：一度以为长度字段在「6 字节头之后」，于是怎么都对不齐第三条消息，
+> 还写穷举脚本去搜布局。真相是**长度在最前面且包含自身**。
+> 另外 `libtolua.so` 反汇编出的「`offset+6` 写长度、负载从 `offset+10` 开始」
+> 描述的是**内层嵌套结构**而非最外层传输帧——这是主要误导来源。
+
+实现见 `tools/wsgr_proto.py`（加解密 + 切帧 + 跳过填充，含自测）。
 
 ### 4.3 内层字段 = protobuf 风格 TLV
 
@@ -165,7 +177,7 @@ bl   memcpy
 ### 4.4 端到端验证
 
 `tools/wsgr_client.py` 直连 `xr-server-2.moefantasy.com:10010`，
-发送抓取到的握手+进入游戏请求，服务端**下发了新会话密钥** `EVFZLn3GVXmV08Hh`；
+发送抓取到的握手+进入游戏请求，服务端**下发了新会话密钥** `<REDACTED_SESSION_KEY>`；
 73 KB 初始数据解密后含好友/演习名单（`Richelieu`、`Miyuki`…）、
 字段名（`def`/`atk`/`torpedo`/`air_`）、客户端配置（`{"audit":false,…}`）。
 
@@ -202,7 +214,7 @@ bl   memcpy
 | `login.jr.moefantasy.com` / `version.jr.moefantasy.com` | NXDOMAIN |
 | `s1..s14.jr.moefantasy.com` (116.63.102.78) | 记录在，IP 不通 |
 | `AuthHead: HMS 881d3SlFucX5R5hE` / `AuthKey: kHPmWZ4zQBYP24ubmJ5wA4oz0d8EgIFe` | 已从客户端移除 |
-| URL 签名密钥 `ade2688f1904e9fb8d2efdb61b5e398a` | 已从客户端移除，请求不再带 `t`/`e` |
+| URL 签名密钥 `<REDACTED_HEX32>` | 已从客户端移除，请求不再带 `t`/`e` |
 | REST API（`api/initGame`、`pve/getPveData`、`boat/*` …） | 新服全部 **404** |
 | `channel=100016` / `market=2` | 现为 `channel=taptap` / `app_id=xr_cn_release` |
 
