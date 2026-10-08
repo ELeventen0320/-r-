@@ -51,6 +51,7 @@ TOOLS = [
     "scan_offset.sh",      # 区域内按偏移定位关键词
     "dump_msgs.py",         # 消息转储 (头+TLV)
     "wsgr_proto.py",        # ★ 协议编解码库 (加解密+切帧+跳填充)
+    "frames_hex.py",         # 逐帧十六进制转储 (识别动作消息)
     "wsgr_headless.py",     # ★ 脱机客户端完整链路 (列表+认证+连接)
     "frame_verify.py",      # 帧格式验证
     "frame_verify2.py",     # 帧格式验证 (带重同步)
