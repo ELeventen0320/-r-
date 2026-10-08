@@ -54,6 +54,7 @@ TOOLS = [
     "frames_hex.py",         # 逐帧十六进制转储 (识别动作消息)
     "frames_timed.py",       # 带时间戳逐帧解码 (操作↔消息对齐)
     "wsgr_headless.py",     # ★ 脱机客户端完整链路 (列表+认证+连接)
+    "wsgr_bot.py",            # ★★ 脱机挂机客户端 (登录/领奖/派遣/挂机循环)
     "frame_verify.py",      # 帧格式验证
     "frame_verify2.py",     # 帧格式验证 (带重同步)
     "frame_solve.py",       # 帧格式穷举求解
