@@ -55,6 +55,9 @@ TOOLS = [
     "frames_timed.py",       # 带时间戳逐帧解码 (操作↔消息对齐)
     "wsgr_headless.py",     # ★ 脱机客户端完整链路 (列表+认证+连接)
     "wsgr_bot.py",            # ★★ 脱机挂机客户端 (登录/领奖/派遣/挂机循环)
+    "wsgr_bot2.py",           # ★★ 挂机客户端 v2 (状态码解析/自动重连/抖动限速)
+    "pbdecode.py",           # 通用 protobuf 风格解码器
+    "find_state.py",         # 初始推送中定位状态数据
     "frame_verify.py",      # 帧格式验证
     "frame_verify2.py",     # 帧格式验证 (带重同步)
     "frame_solve.py",       # 帧格式穷举求解
