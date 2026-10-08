@@ -69,12 +69,28 @@ def scrub(text):
     return text, hits
 
 
+def rmtree_force(path):
+    """删除目录, 遇到只读文件先清属性 (不触碰 publish/.git)."""
+    import stat
+
+    def onerr(func, p, exc):
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+        except Exception:
+            pass
+
+    if os.path.exists(path):
+        shutil.rmtree(path, onerror=onerr)
+
+
 def main():
     print("脱敏规则条数: %d (%s)" % (len(SECRETS), "已加载 secrets.txt" if SECRETS else "缺失!"))
-    if os.path.exists(PUB):
-        shutil.rmtree(PUB)
-    os.makedirs(os.path.join(PUB, "docs"))
-    os.makedirs(os.path.join(PUB, "tools"))
+    # 只清理产物目录, 保留 .git / README / .gitignore
+    rmtree_force(os.path.join(PUB, "docs"))
+    rmtree_force(os.path.join(PUB, "tools"))
+    os.makedirs(os.path.join(PUB, "docs"), exist_ok=True)
+    os.makedirs(os.path.join(PUB, "tools"), exist_ok=True)
 
     for t in TOOLS:
         src = os.path.join(TOOLS_SRC, t)
