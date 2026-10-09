@@ -26,20 +26,34 @@ class TokenExpired(Exception):
     pass
 
 
-def patch_login_token(content, token):
-    """把登录消息里的 field 4 (tag 0x22) 替换为当前 token.
+def _replace_field(content, tag, value):
+    """把长度为 len(value) 的字段 (tag) 的内容替换为 value."""
+    i = content.find(bytes([tag, len(value)]))
+    if i >= 0 and len(content) >= i + 2 + len(value):
+        return content[:i + 2] + value + content[i + 2 + len(value):]
+    return content
 
-    ★ 这是关键修复: 抓包里的登录帧烧死了**当时的** token,
-      直接重放会导致「连接建立成功、认证却用的是过期凭据」——
-      表现为连接正常、心跳照常, 但一发动作就被服务端 RST,
-      极易被误判成"服务端限流".
+
+def patch_login_token(content, token, fresh_instance=False):
+    """注入当前 token, 并(默认)生成全新的 f9 客户端实例 ID.
+
+    ★ 两个关键点, 都是踩坑踩出来的:
+
+    1) **token 必须注入** (field 4, tag 0x22)
+       抓包里的登录帧烧死了抓包当时的 token, 直接重放会导致
+       「连接建立成功、认证却用过期凭据」——症状与"服务端限流"完全相同.
+
+    2) f9 (field 9, tag 0x4a) —— **已实测: 不可随机化**
+       曾假设 f9 是"每次启动新生成的客户端实例 ID", 于是随机化它;
+       结果服务端回完 11589(欢迎) 后立刻发 5701 并**重置连接**。
+       => f9 是**服务端校验过的设备注册 ID**, 必须复用有效值。
+       该参数保留仅为记录这次实验, 默认关闭。
     """
-    tb = token.encode()
-    for tag in (0x22, 0x12):                     # field4 / field2
-        i = content.find(bytes([tag, len(tb)]))
-        if i >= 0 and len(content) >= i + 2 + len(tb):
-            return content[:i + 2] + tb + content[i + 2 + len(tb):]
-    return content                                # 没找到就不动
+    content = _replace_field(content, 0x22, token.encode())
+    if fresh_instance:
+        import os as _os
+        content = _replace_field(content, 0x4A, _os.urandom(16).hex().encode())
+    return content
 
 
 def load_login_frames(path, token=None):
