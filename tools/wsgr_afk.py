@@ -24,6 +24,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from wsgr import bootstrap, ctx as ctxmod, inspect as inspectmod, proto
+from wsgr import server as srvmod
 from wsgr import session as sessmod, tasks
 
 
@@ -41,6 +42,19 @@ def cmd_info(c):
         info = bootstrap.auth(tok)
         c.log("token 有效. 账号=%s account_id=%s"
               % (info.get("account_name"), info.get("account_id")))
+        played = srvmod.last_played(info)
+        if played:
+            c.log("账号游玩记录 (服务器ID -> 最后登录, 按新到旧):")
+            for sid, ts in played[:6]:
+                c.log("   id=%-4d %s  (%d 秒前)"
+                      % (sid, time.strftime("%m-%d %H:%M:%S",
+                                            time.localtime(ts)),
+                         int(time.time()) - ts))
+        act = srvmod.active_server(info, notice)
+        if act:
+            host, port = srvmod.game_endpoint(notice, act["id"])
+            c.log("=> 当前服务器: id=%s %s  \u2192 %s:%s"
+                  % (act["id"], act["name"], host, port))
         return 0
     except bootstrap.AuthError as e:
         c.log("!! %s" % e)
@@ -48,10 +62,28 @@ def cmd_info(c):
         return 2
 
 
+def resolve_server(c):
+    """根据 auth 的游玩记录自动选择服务器 (失败则回退到配置值)."""
+    try:
+        info = bootstrap.auth(c.load_token())
+        notice = bootstrap.get_notice()
+        act = srvmod.active_server(info, notice)
+        if act:
+            host, port = srvmod.game_endpoint(notice, act["id"])
+            if host:
+                c.log("自动选服: id=%s %s -> %s:%s"
+                      % (act["id"], act["name"], host, port))
+                return host, port
+    except Exception as e:
+        c.log("自动选服失败, 回退配置: %s" % e)
+    return c.cfg["server"], c.cfg["port"]
+
+
 def make_session(c):
+    host, port = resolve_server(c)
     return sessmod.Session(
         c.load_token(),
-        host=c.cfg["server"], port=c.cfg["port"],
+        host=host, port=port,
         login_frame_path=c.cfg["login_frame"], log=c.log)
 
 
