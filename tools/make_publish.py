@@ -59,6 +59,7 @@ TOOLS = [
     "wsgr_afk.py",            # ★★★ 完整脱机脚本入口           # ★★ 挂机客户端 v2 (状态码解析/自动重连/抖动限速)
     "scan_records.py",# 内层记录模式扫描 (定位远征记录)
     "dump_record.py",# 记录区原始字节转储
+    "test_sync.py",             # 同步模式对照实验
     "extract_login.py",         # 从抓包提取登录模板并解字段
     "diff7131.py",            # 7131 双样本逐字节对齐
     "inner_diff.py",           # 按 msgid 批量差分 (静态 vs 状态)
