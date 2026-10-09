@@ -108,6 +108,16 @@ def cmd_run(c, seconds):
                 s.connect()
                 c.ctx_session = s
                 c.session = s
+                # 配置里远征写 "auto" 时, 用扫描到的真实远征 ID
+                for t in tlist:
+                    if hasattr(t, "expeditions") and t.expeditions == ["auto"]:
+                        if s.expeditions:
+                            t.expeditions = list(s.expeditions)
+                            c.log("  [i] %s 使用扫描到的远征 %s"
+                                  % (t.name, t.expeditions))
+                        else:
+                            c.log("  [!] %s 未能扫描到远征 ID, 跳过本轮"
+                                  % t.name)
                 # 每次(重)连都要重置任务的下次执行时间, 避免连上就猛发
                 now = time.time()
                 for t in tlist:

@@ -10,7 +10,7 @@ import os
 import socket
 import time
 
-from . import proto
+from . import proto, state
 from .bootstrap import auth, AuthError
 
 DEFAULT_HOST = "xr-server-2.moefantasy.com"
@@ -75,6 +75,7 @@ class Session:
         self.ka = proto.encrypt(proto.keepalive())
         #: 消息序号 —— 必须递增, 重复/倒退会被服务端静默丢弃
         self.seq = 1
+        self.expeditions = []
         self.stats = {"sent": 0, "recv": 0, "reconnect": 0, "errors": 0}
 
     # ---------- 生命周期 ----------
@@ -105,8 +106,12 @@ class Session:
         self.log("  [i] 下一个消息序号 = %d" % self.seq)
         time.sleep(1.2)
         self.log("  [i] 登录响应帧:")
-        for mid, ln, c in self.recv_until_idle(2.0):
+        init = self.recv_until_idle(6.0)
+        for mid, ln, c in init:
             self.log("      msgid=%-6d len=%-6d" % (mid, ln))
+        # 从初始推送里尽力提取状态 (内层编码未完全解出, 见 wsgr/state.py)
+        self.expeditions = state.extract_expedition_ids([c for _, _, c in init])
+        self.log("  [i] 状态扫描: 远征 ID = %s" % self.expeditions)
         self.last_ka = time.time()
 
     def close(self):
@@ -166,8 +171,17 @@ class Session:
         if not c:
             raise SessionError("连接被关闭")
         self.stats["recv"] += len(c)
-        return [(proto.msgid_of(ct), ln, ct)
-                for off, ln, ct in proto.parse_frames(proto.decrypt(c), 0)]
+        out = [(proto.msgid_of(ct), ln, ct)
+               for off, ln, ct in proto.parse_frames(proto.decrypt(c), 0)]
+        # 持续扫描状态: 大帧可能在登录后任意时刻才到
+        if any(ln > 1000 for _, ln, _ in out):
+            got = state.extract_expedition_ids([ct for _, _, ct in out])
+            fresh = [e for e in got if e not in self.expeditions]
+            if fresh:
+                self.expeditions.extend(fresh)
+                self.log("  [i] 状态扫描: 新发现远征 %s (共 %d)"
+                         % (fresh, len(self.expeditions)))
+        return out
 
     def drain(self, wait=1.0):
         """丢弃并返回当前积压的数据 (用于清理心跳)."""
