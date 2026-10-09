@@ -59,6 +59,9 @@ TOOLS = [
     "wsgr_afk.py",            # ★★★ 完整脱机脚本入口           # ★★ 挂机客户端 v2 (状态码解析/自动重连/抖动限速)
     "scan_records.py",# 内层记录模式扫描 (定位远征记录)
     "dump_record.py",# 记录区原始字节转储
+    "inner_stats.py",# 内层容器统计反推
+    "inner_v2.py",# 内层解析 (0x1bxx 约束切分)
+    "inner_list.py",# 内层消息完整清单
     "decode_port.py",         # 按端口双向帧解码 (真机行为对照)
     "pbdecode.py",           # 通用 protobuf 风格解码器
     "find_state.py",         # 初始推送中定位状态数据
