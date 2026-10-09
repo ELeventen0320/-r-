@@ -7,6 +7,7 @@ wsgr.bootstrap —— HTTP 引导链 (全部实测验证)
      (实测 10005 只在 xr-server-4 开放)
 """
 import json
+import re
 import urllib.parse
 import urllib.request
 import zlib
@@ -60,6 +61,41 @@ def server_list(notice):
     return out
 
 
+def _parse_loose(txt):
+    """容错解析认证响应.
+
+    ⚠️ 服务端返回的**不是合法 JSON**: server_list 的数字键没有引号, 例如
+        {"age":34,...,"server_list":{2:1768971521,4:1768971718},...}
+    直接 json.loads 会抛异常 —— 早期版本因此把「认证成功」误判成「token 失效」.
+    """
+    try:
+        return json.loads(txt)
+    except Exception:
+        pass
+    # 退路 1: 给裸数字键补引号后再试
+    try:
+        fixed = re.sub(r'([{,]\s*)(\d+)(\s*:)', r'\1"\2"\3', txt)
+        fixed = re.sub(r',\s*([}\]])', r'\1', fixed)   # 去尾逗号
+        return json.loads(fixed)
+    except Exception:
+        pass
+    # 退路 2: 只抠关键字段
+    out = {}
+    m = re.search(r'"error_code"\s*:\s*(-?\d+)', txt)
+    if m:
+        out["error_code"] = int(m.group(1))
+    m = re.search(r'"error_msg"\s*:\s*"([^"]*)"', txt)
+    if m:
+        out["error_msg"] = m.group(1)
+    for k in ("account_name", "account_id"):
+        m = re.search(r'"%s"\s*:\s*"?([^",}]+)"?' % k, txt)
+        if m:
+            out[k] = m.group(1)
+    if out:
+        return out
+    raise ValueError("无法解析认证响应: %s" % txt[:120])
+
+
 def auth(token, host=AUTH_HOST, port=AUTH_PORT):
     """账号认证. 返回账号信息 dict; 失败抛 AuthError.
 
@@ -71,9 +107,11 @@ def auth(token, host=AUTH_HOST, port=AUTH_PORT):
     st, raw = _http("http://%s:%d/auth/" % (host, port), body)
     txt = raw.decode("utf-8", "replace")
     try:
-        info = json.loads(txt)
-    except Exception:
-        raise AuthError(-1, "响应非 JSON: %s" % txt[:120])
+        info = _parse_loose(txt)
+    except ValueError as e:
+        raise AuthError(-1, str(e))
+    if not isinstance(info, dict):
+        raise AuthError(-1, "认证响应异常: %s" % txt[:120])
     code = info.get("error_code", info.get("error", 0))
     if code:
         raise AuthError(code, info.get("error_msg", ""))

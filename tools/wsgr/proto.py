@@ -99,19 +99,31 @@ def f_bytes(field: int, data: bytes) -> bytes:
     return bytes([(field << 3) | 2]) + bytes([len(data)]) + data
 
 
-def build_message(msgid: int, fields: bytes = b"", trailer=None) -> bytes:
+def build_message(msgid: int, fields: bytes = b"", trailer=None, seq=None) -> bytes:
     """构造一条应用层消息 (明文).
 
-    trailer: 观测到的 4 字节尾部. 缺省按「字段字节数 + 常数」推算:
-      单字段 (7136) -> +3      双字段 (7132) -> +2
-    实测两种都能被服务端接受; 保守起见按观测值生成.
+    seq: ★ 消息序号 —— 每条消息尾部 4 字节是一个**全局递增序号**.
+    实测: 登录块里依次是 1,2,3,4,(5,6); 之后每次动作 +1.
+    序号重复或倒退会被服务端**静默丢弃** (症状 = 连接正常但动作无响应),
+    因此绝不能硬编码, 必须由会话维护并递增.
+
+    trailer: 显式指定尾部 4 字节 (一般用 seq 即可).
     """
     content = struct.pack("<H", msgid) + fields
-    if trailer is None and fields:
-        trailer = len(fields) + (3 if fields.count(0x08) + fields.count(0x10) <= 1 else 2)
+    if seq is not None:
+        trailer = seq
+    elif trailer is None and fields:
+        trailer = None            # 无序号时不加尾部, 避免误用旧序号
     if trailer is not None:
         content += struct.pack("<I", trailer)
     return build_frame(content)
+
+
+def seq_of(content: bytes):
+    """取消息尾部 4 字节序号; 无则返回 None."""
+    if len(content) >= 6:
+        return struct.unpack_from("<I", content, len(content) - 4)[0]
+    return None
 
 
 def msgid_of(content: bytes) -> int:
@@ -140,16 +152,15 @@ def find_inner(content: bytes, want_ids):
 
 
 # ---- 动作构造 ----
-def claim_expedition(expedition_id: int) -> bytes:
+def claim_expedition(expedition_id: int, seq=None) -> bytes:
     """领取远征奖励 (msgid 7136, field1 = 远征ID)."""
-    f = f_varint(1, expedition_id)
-    return build_message(MSG_EXPEDITION_CLAIM, f, trailer=len(f) + 3)
+    return build_message(MSG_EXPEDITION_CLAIM, f_varint(1, expedition_id), seq=seq)
 
 
-def dispatch_expedition(fleet: int, expedition_id: int) -> bytes:
+def dispatch_expedition(fleet: int, expedition_id: int, seq=None) -> bytes:
     """派遣 / 继续远征 (msgid 7132, field1 = 舰队, field2 = 远征ID)."""
     f = f_varint(1, fleet) + f_varint(2, expedition_id)
-    return build_message(MSG_EXPEDITION_DISPATCH, f, trailer=len(f) + 2)
+    return build_message(MSG_EXPEDITION_DISPATCH, f, seq=seq)
 
 
 def keepalive() -> bytes:

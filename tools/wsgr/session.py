@@ -26,15 +26,37 @@ class TokenExpired(Exception):
     pass
 
 
-def load_login_frames(path):
-    """从抓包文件里取出完整登录块 (密文原样)."""
+def patch_login_token(content, token):
+    """把登录消息里的 field 4 (tag 0x22) 替换为当前 token.
+
+    ★ 这是关键修复: 抓包里的登录帧烧死了**当时的** token,
+      直接重放会导致「连接建立成功、认证却用的是过期凭据」——
+      表现为连接正常、心跳照常, 但一发动作就被服务端 RST,
+      极易被误判成"服务端限流".
+    """
+    tb = token.encode()
+    for tag in (0x22, 0x12):                     # field4 / field2
+        i = content.find(bytes([tag, len(tb)]))
+        if i >= 0 and len(content) >= i + 2 + len(tb):
+            return content[:i + 2] + tb + content[i + 2 + len(tb):]
+    return content                                # 没找到就不动
+
+
+def load_login_frames(path, token=None):
+    """从抓包文件取出完整登录块; 传入 token 则注入当前 token."""
     raw = open(path, "rb").read()
-    fr = proto.parse_frames(proto.decrypt(raw), 0)
+    plain = proto.decrypt(raw)
     out = []
-    for off, ln, _ in fr:
+    for off, ln, _ in proto.parse_frames(plain, 0):
         if ln == 6 and out:          # 登录块结束, 之后都是保活
             break
-        out.append((ln, raw[off:off + ln]))
+        content = plain[off + 4:off + ln]
+        if token and ln > 100:       # 大帧 = 登录消息
+            patched = patch_login_token(content, token)
+            if patched != content:
+                content = patched
+        out.append((ln, proto.encrypt(proto.build_frame(content)),
+                    proto.seq_of(content)))
     return out
 
 
@@ -51,6 +73,8 @@ class Session:
         self.sock = None
         self.last_ka = 0.0
         self.ka = proto.encrypt(proto.keepalive())
+        #: 消息序号 —— 必须递增, 重复/倒退会被服务端静默丢弃
+        self.seq = 1
         self.stats = {"sent": 0, "recv": 0, "reconnect": 0, "errors": 0}
 
     # ---------- 生命周期 ----------
@@ -68,13 +92,21 @@ class Session:
         self.sock.settimeout(2.0)
         self.sock.connect((self.host, self.port))
         self.log("已连接 %s:%d" % (self.host, self.port))
-        for ln, pkt in load_login_frames(self.frame_path):
+        maxseq = 0
+        for ln, pkt, seq in load_login_frames(self.frame_path, self.token):
             self.sock.sendall(pkt)
             self.stats["sent"] += 1
-            self.log("  [>] 登录帧 len=%d" % ln)
+            self.log("  [>] 登录帧 len=%-4d seq=%s" % (ln, seq))
+            if seq:
+                maxseq = max(maxseq, seq)
             time.sleep(0.3)
+        # 登录块占用了序号 1..maxseq, 之后从 maxseq+1 开始
+        self.seq = maxseq + 1
+        self.log("  [i] 下一个消息序号 = %d" % self.seq)
         time.sleep(1.2)
-        self.recv_until_idle(1.5)
+        self.log("  [i] 登录响应帧:")
+        for mid, ln, c in self.recv_until_idle(2.0):
+            self.log("      msgid=%-6d len=%-6d" % (mid, ln))
         self.last_ka = time.time()
 
     def close(self):
@@ -147,8 +179,9 @@ class Session:
     # ---------- 动作 ----------
     def do_claim_expedition(self, expedition_id):
         """领取远征奖励; 返回状态码或 None."""
-        self.send(proto.claim_expedition(expedition_id))
-        self.log("  [>] 领取远征奖励 远征=%d" % expedition_id)
+        self.send(proto.claim_expedition(expedition_id, seq=self.seq))
+        self.log("  [>] 领取远征奖励 远征=%d seq=%d" % (expedition_id, self.seq))
+        self.seq += 1
         time.sleep(0.8)
         frames, _ = self.recv_frames(2.5)
         for mid, ln, content in frames:
@@ -160,8 +193,10 @@ class Session:
 
     def do_dispatch_expedition(self, fleet, expedition_id):
         """派遣 / 继续远征; 返回状态码或 None."""
-        self.send(proto.dispatch_expedition(fleet, expedition_id))
-        self.log("  [>] 派遣远征 舰队=%d 远征=%d" % (fleet, expedition_id))
+        self.send(proto.dispatch_expedition(fleet, expedition_id, seq=self.seq))
+        self.log("  [>] 派遣远征 舰队=%d 远征=%d seq=%d"
+                 % (fleet, expedition_id, self.seq))
+        self.seq += 1
         time.sleep(0.8)
         frames, _ = self.recv_frames(2.5)
         for mid, ln, content in frames:
