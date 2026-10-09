@@ -57,6 +57,7 @@ TOOLS = [
     "wsgr_bot.py",            # ★★ 脱机挂机客户端 (登录/领奖/派遣/挂机循环)
     "wsgr_bot2.py",
     "wsgr_afk.py",            # ★★★ 完整脱机脚本入口           # ★★ 挂机客户端 v2 (状态码解析/自动重连/抖动限速)
+    "decode_port.py",         # 按端口双向帧解码 (真机行为对照)
     "pbdecode.py",           # 通用 protobuf 风格解码器
     "find_state.py",         # 初始推送中定位状态数据
     "frame_verify.py",      # 帧格式验证
