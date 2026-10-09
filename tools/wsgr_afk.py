@@ -73,15 +73,22 @@ def cmd_login(c, seconds):
 
 def cmd_once(c, kind, voyage, fleet=None):
     s = make_session(c)
-    s.verify_token()
-    s.connect()
     try:
+        s.verify_token()
+        s.connect()
         if kind == "claim":
             s.do_claim_expedition(voyage)
         else:
             s.do_dispatch_expedition(fleet or 6, voyage)
+    except sessmod.TokenExpired as e:
+        c.log("!! 凭据失效: %s" % e)
+        return 3
+    except sessmod.SessionError as e:
+        c.log("!! 会话异常: %s" % e)
+        return 4
     finally:
         s.close()
+    c.log("统计: %s" % s.stats)
     return 0
 
 
