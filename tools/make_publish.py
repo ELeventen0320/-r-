@@ -55,7 +55,8 @@ TOOLS = [
     "frames_timed.py",       # 带时间戳逐帧解码 (操作↔消息对齐)
     "wsgr_headless.py",     # ★ 脱机客户端完整链路 (列表+认证+连接)
     "wsgr_bot.py",            # ★★ 脱机挂机客户端 (登录/领奖/派遣/挂机循环)
-    "wsgr_bot2.py",           # ★★ 挂机客户端 v2 (状态码解析/自动重连/抖动限速)
+    "wsgr_bot2.py",
+    "wsgr_afk.py",            # ★★★ 完整脱机脚本入口           # ★★ 挂机客户端 v2 (状态码解析/自动重连/抖动限速)
     "pbdecode.py",           # 通用 protobuf 风格解码器
     "find_state.py",         # 初始推送中定位状态数据
     "frame_verify.py",      # 帧格式验证
@@ -63,6 +64,9 @@ TOOLS = [
     "frame_solve.py",       # 帧格式穷举求解
     "hd.py",                # 带偏移 hexdump
 ]
+
+# 整目录发布的包 (如 wsgr/)
+PACKAGES = ["wsgr"]
 
 DOCS = [
     "舰R现行协议还原报告.md",
@@ -117,6 +121,15 @@ def main():
             print("tool   %s" % t)
         else:
             print("MISS   %s" % t)
+
+    for pkg in PACKAGES:
+        src = os.path.join(TOOLS_SRC, pkg)
+        dst = os.path.join(PUB, "tools", pkg)
+        if os.path.isdir(src):
+            shutil.copytree(src, dst, dirs_exist_ok=True)
+            print("pkg    %s/ (%d 个文件)" % (pkg, len(os.listdir(src))))
+        else:
+            print("MISS pkg %s" % pkg)
 
     for d in DOCS:
         src = os.path.join(ROOT, d)
