@@ -23,7 +23,8 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from wsgr import bootstrap, ctx as ctxmod, proto, session as sessmod, tasks
+from wsgr import bootstrap, ctx as ctxmod, inspect as inspectmod, proto
+from wsgr import session as sessmod, tasks
 
 
 def cmd_info(c):
@@ -92,6 +93,29 @@ def cmd_once(c, kind, voyage, fleet=None):
     return 0
 
 
+def cmd_inspect(c, seconds, dump=None):
+    """登录后收集推送并输出状态报告."""
+    s = make_session(c)
+    try:
+        s.verify_token()
+        s.connect()
+        c.log("收集推送 %d 秒 ..." % seconds)
+        frames = inspectmod.collect(s, seconds)
+        info = inspectmod.report(frames, c.log)
+        if dump:
+            inspectmod.save_raw(frames, dump)
+            c.log("原始帧已保存: %s" % dump)
+        return 0 if info["expeditions"] else 5
+    except sessmod.TokenExpired as e:
+        c.log("!! 凭据失效: %s" % e)
+        return 3
+    except sessmod.SessionError as e:
+        c.log("!! 会话异常: %s" % e)
+        return 4
+    finally:
+        s.close()
+
+
 def cmd_run(c, seconds):
     """挂机主循环: 断线自动重连, 任务按各自节奏调度."""
     tlist = tasks.default_tasks(c, c.cfg)
@@ -153,11 +177,13 @@ def cmd_run(c, seconds):
 
 def main():
     ap = argparse.ArgumentParser(description="战舰少女R 脱机脚本")
-    ap.add_argument("cmd", choices=["info", "login", "claim", "dispatch", "run"])
+    ap.add_argument("cmd", choices=["info", "login", "claim", "dispatch",
+                                        "inspect", "run"])
     ap.add_argument("args", nargs="*", type=int)
     ap.add_argument("--seconds", type=int, default=None)
     ap.add_argument("--config", default=None)
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--dump", default=None, help="把原始帧保存到该文件")
     a = ap.parse_args()
 
     cfg = ctxmod.load_config(a.config)
@@ -178,6 +204,9 @@ def main():
         if len(a.args) < 2:
             c.log("用法: dispatch <舰队> <远征ID>"); return 1
         return cmd_once(c, "dispatch", a.args[1], a.args[0])
+    if a.cmd == "inspect":
+        return cmd_inspect(c, a.seconds if a.seconds is not None else 15,
+                           a.dump)
     if a.cmd == "run":
         return cmd_run(c, a.seconds if a.seconds is not None else 0)
     return 1

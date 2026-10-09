@@ -76,6 +76,8 @@ class Session:
         #: 消息序号 —— 必须递增, 重复/倒退会被服务端静默丢弃
         self.seq = 1
         self.expeditions = []
+        #: 登录时收到的初始推送 (大帧状态就在这里, 不能丢)
+        self.initial_frames = []
         self.stats = {"sent": 0, "recv": 0, "reconnect": 0, "errors": 0}
 
     # ---------- 生命周期 ----------
@@ -107,6 +109,7 @@ class Session:
         time.sleep(1.2)
         self.log("  [i] 登录响应帧:")
         init = self.recv_until_idle(6.0)
+        self.initial_frames = list(init)
         for mid, ln, c in init:
             self.log("      msgid=%-6d len=%-6d" % (mid, ln))
         # 从初始推送里尽力提取状态 (内层编码未完全解出, 见 wsgr/state.py)
